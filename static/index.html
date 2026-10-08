@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Служба поддержки ДЗ №1</title>
+<style>
+:root{font-family:system-ui,Arial,sans-serif;color:#19202b;background:#f5f7fa}body{max-width:1100px;margin:0 auto;padding:25px}h1{font-size:24px}nav{display:flex;gap:10px;margin:22px 0}button{cursor:pointer;border:1px solid #ccd5df;border-radius:8px;background:white;padding:10px 14px}button.primary{background:#185abc;color:white;border-color:#185abc}.panel{background:white;padding:20px;border:1px solid #dde4ee;border-radius:12px;margin:14px 0}table{border-collapse:collapse;width:100%}th,td{padding:9px;border-bottom:1px solid #e5e8ec;text-align:left}th{font-weight:600;color:#58677a}input,select,textarea{padding:10px;border:1px solid #c8d0db;border-radius:6px;margin:5px;max-width:100%;box-sizing:border-box}textarea{min-width:320px}a{color:#185abc;cursor:pointer}small{color:#596577}#error{color:#a00}pre{white-space:pre-wrap}.muted{color:#596577}</style></head><body>
+<h1>Сервис заявок в службу поддержки</h1>
+<small>Оптимизация клиент-серверных приложений ДЗ №1 вариант 2</small>
+<nav><button onclick="show('list')">Список заявок</button><button onclick="show('detail')">Карточка заявки</button><button onclick="show('summary')">Сводка</button></nav>
+<div id="error"></div>
+<section id="list" class="panel">
+<h2>Заявки</h2><label>Статус <select id="filterStatus"><option value="">Все</option><option value="new">Новая</option><option value="in_progress">В работе</option><option value="closed">Закрыта</option></select></label>
+<label>Категория <select id="filterCategory"><option value="">Все</option></select></label><button onclick="page=1;loadList()">Применить фильтр</button>
+<table><thead><tr><th>ID</th><th>Название</th><th>Статус</th><th>Категория</th></tr></thead><tbody id="ticketRows"></tbody></table>
+<div style="margin-top:15px"><button onclick="page=Math.max(1,page-1);loadList()">Назад</button> <span id="pager"></span> <button onclick="page++;loadList()">Вперёд</button></div>
+<h3>Создать заявку</h3><label>Пользователь <select id="newUser"></select></label><label>Категория <select id="newCategory"></select></label><input id="newTitle" placeholder="Тема" value="Новая тестовая заявка"><textarea id="newBody" placeholder="Описание">Нужна помощь сотрудника</textarea><button class="primary" onclick="createTicket()">Создать</button>
+</section>
+<section id="detail" class="panel" hidden><h2>Карточка заявки</h2><div><label>ID заявки <input type="number" id="detailId" min="1" value="1"></label><button onclick="loadDetail()">Открыть</button></div><div id="detailData"></div>
+<h3>Изменить статус</h3><select id="newStatus"><option value="new">Новая</option><option value="in_progress">В работе</option><option value="closed">Закрыта</option></select><button onclick="changeStatus()">Сохранить</button>
+<h3>Добавить комментарий</h3><label>Автор <select id="commentAuthor"></select></label><input id="commentText" value="Ответ сотрудника"><button onclick="addComment()">Отправить</button></section>
+<section id="summary" class="panel" hidden><h2>Сводка</h2><div id="overall"></div><table><thead><tr><th>Категория</th><th>Всего</th><th>Открытых</th><th>Нарушения SLA</th><th>Доля нарушений, %</th></tr></thead><tbody id="summaryRows"></tbody></table></section>
+<script>
+let page=1,cats=[];let $=id=>document.getElementById(id);
+const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+async function api(url,options={}){ $('error').textContent='';const r=await fetch(url,{...options,headers:{'Content-Type':'application/json',...(options.headers||{})}});let data=await r.json();if(!r.ok){let msg=typeof data.detail==='string'?data.detail:JSON.stringify(data.detail);throw Error(r.status+' '+msg)}return data}
+async function safe(fn){try{await fn()}catch(e){$('error').textContent=e.message}}
+function show(view){for(const key of ['list','detail','summary'])$(key).hidden=key!==view;if(view==='list')safe(loadList);if(view==='detail')safe(loadDetail);if(view==='summary')safe(loadSummary)}
+async function init(){const meta=await api('/api/meta');cats=meta.categories;for(const id of ['filterCategory','newCategory']){ $(id).innerHTML=(id==='filterCategory'?'<option value="">Все</option>':'')+cats.map(c=>`<option value="${c.id}">${esc(c.name)}</option>`).join('')}
+for(const id of ['newUser','commentAuthor'])$(id).innerHTML=meta.users.map(u=>`<option value="${u.id}">${esc(u.username)}</option>`).join('');await loadList()}
+async function loadList(){const status=$('filterStatus').value,cat=$('filterCategory').value;const url=`/api/tickets?page=${page}&size=20`+(status?'&status='+status:'')+(cat?'&category_id='+cat:'');const data=await api(url);$('ticketRows').innerHTML=data.items.map(t=>`<tr><td><a onclick="openTicket(${t.id})">${t.id}</a></td><td>${esc(t.title)}</td><td>${esc(t.status)}</td><td>${t.category_id}</td></tr>`).join('')||'<tr><td colspan="4">Нет заявок</td></tr>';$('pager').textContent=`Страница ${page} · всего ${data.total}`}
+function openTicket(id){$('detailId').value=id;show('detail')}
+async function loadDetail(){const id=Number($('detailId').value);if(!id)return;const d=await api('/api/tickets/'+id);$('newStatus').value=d.status;$('detailData').innerHTML=`<p><b>${esc(d.title)}</b> — ${esc(d.status)}</p><p>${esc(d.body)}</p><p>Автор: ${esc(d.owner)} · Категория: ${esc(d.category)} · SLA: ${d.sla_minutes} мин.</p><p>Время реакции: ${d.response_minutes??'ответа нет'} · Нарушение SLA: <b>${d.sla_breached?'да':'нет'}</b></p><h3>Комментарии (${d.comments.length})</h3>${d.comments.map(c=>`<p><b>${esc(c.author)}</b>: ${esc(c.body)}</p>`).join('')}`}
+async function loadSummary(){const d=await api('/api/summary');$('overall').textContent=`Всего заявок: ${d.total_tickets}; открыто: ${d.open_tickets}`;$('summaryRows').innerHTML=d.categories.map(c=>`<tr><td>${esc(c.category)}</td><td>${c.total}</td><td>${c.open}</td><td>${c.sla_violations}</td><td>${c.violation_share_pct}</td></tr>`).join('')}
+async function createTicket(){await safe(async()=>{const d=await api('/api/tickets',{method:'POST',body:JSON.stringify({user_id:Number($('newUser').value),category_id:Number($('newCategory').value),title:$('newTitle').value,body:$('newBody').value})});alert('Создана заявка '+d.id);$('detailId').value=d.id;show('detail')})}
+async function changeStatus(){await safe(async()=>{await api('/api/tickets/'+Number($('detailId').value)+'/status',{method:'PATCH',body:JSON.stringify({status:$('newStatus').value})});await loadDetail()})}
+async function addComment(){await safe(async()=>{await api('/api/tickets/'+Number($('detailId').value)+'/comments',{method:'POST',body:JSON.stringify({author_id:Number($('commentAuthor').value),body:$('commentText').value})});await loadDetail()})}
+safe(init);
+</script></body></html>
